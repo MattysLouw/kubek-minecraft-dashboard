@@ -12,7 +12,7 @@ const auth_manager = require("./my_modules/auth_manager");
 // Express initialization
 const express = require('express');
 const app = express();
-const port = 3000;
+const port = 3080;
 const updatesInterval = 3600000; // 5 hours
 const fileUpload = require('express-fileupload');
 const cookieParser = require("cookie-parser");
@@ -73,7 +73,9 @@ socket_options = {
   }
 };
 
-global.io = require("socket.io")(3001, socket_options);
+var server = require('http').createServer(app);
+const sio = require('socket.io')(server, socket_options);
+global.io = sio.listen(server);
 
 io.on("connection", (socket) => {
   socket.emit("handshake", socket.id);
@@ -255,10 +257,9 @@ updater.checkForUpdates(function (upd, body) {
     }
     next();
   });
-  app.listen(port, () => {
-    console.log(additional.getTimeFormatted(), "Webserver", translator.translateHTML("{{consolemsg-usingport}}", cfg['lang']), port);
-  });
-  console.log(additional.getTimeFormatted(), "Socket.io", translator.translateHTML("{{consolemsg-usingport}}", cfg['lang']), 3001);
+  server.listen(port);
+  console.log(additional.getTimeFormatted(), "Webserver", translator.translateHTML("{{consolemsg-usingport}}", cfg['lang']), port);
+  console.log(additional.getTimeFormatted(), "Socket.io", translator.translateHTML("{{consolemsg-usingport}}", cfg['lang']), port);
   if (cfg.ftpd == true) {
     var options = {
       host: '127.0.0.1',
