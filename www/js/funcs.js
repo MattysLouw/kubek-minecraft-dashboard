@@ -10,7 +10,7 @@ function hideLoading() {
 }
 
 function openSocket() {
-  return io("ws://" + window.location.hostname + ":3001");
+  return io("https://" + window.location.hostname);
 }
 
 function updateURLParameter(url, param, paramVal) {
@@ -142,10 +142,6 @@ function stopServer() {
 
 function restartServer() {
   $.get("/server/restart?server=" + window.localStorage.selectedServer);
-}
-
-function killServer() {
-  $.get("/server/kill?server=" + window.localStorage.selectedServer);
 }
 
 const animateCSS = (element, animation, prefix = 'animate__') =>
