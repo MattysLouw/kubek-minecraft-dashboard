@@ -46,33 +46,33 @@ exports.setCheckingForUpdatesByInterval = (updatesInterval) => {
   console.log(additional.getTimeFormatted(), translator.translateHTML("{{consolemsg-update1h}}", cfg['lang']));
   setInterval(function () {
     checkForUpdates_fc(function (upd) {
-      if (upd != 0 && kubek_version != upd) {
-        console.log(additional.getTimeFormatted(), colors.yellow(translator.translateHTML("{{consolemsg-yesupd}}", cfg['lang'])));
-        console.log(additional.getTimeFormatted(), colors.yellow("https://github.com/Seeroy/kubek-minecraft-dashboard/releases/tag/" + upd));
+      // if (upd != 0 && kubek_version != upd) {
+      //   console.log(additional.getTimeFormatted(), colors.yellow(translator.translateHTML("{{consolemsg-yesupd}}", cfg['lang'])));
+      //   console.log(additional.getTimeFormatted(), colors.yellow("https://github.com/Seeroy/kubek-minecraft-dashboard/releases/tag/" + upd));
 
-        assets = body[0].assets;
-        downloaded = false;
-        assets.forEach(function (asset) {
-          platform = process.platform.replace(/32/gm, "");
-          if (asset.name.match(platform) != null) {
-            url = asset.browser_download_url;
-            if(fs.existsSync(url.split("/").pop())) {
-              downloaded = true;
-            }
-          }
-        });
+      //   assets = body[0].assets;
+      //   downloaded = false;
+      //   assets.forEach(function (asset) {
+      //     platform = process.platform.replace(/32/gm, "");
+      //     if (asset.name.match(platform) != null) {
+      //       url = asset.browser_download_url;
+      //       if(fs.existsSync(url.split("/").pop())) {
+      //         downloaded = true;
+      //       }
+      //     }
+      //   });
 
-        updatesByIntArray = {
-          found: true,
-          url: "https://github.com/Seeroy/kubek-minecraft-dashboard/releases/tag/" + upd,
-          downloaded: dwn
-        };
-      } else {
-        console.log(additional.getTimeFormatted(), colors.green(translator.translateHTML("{{consolemsg-noupd}}", cfg['lang'])));
-        updatesByIntArray = {
-          found: false
-        };
-      }
+      //   updatesByIntArray = {
+      //     found: true,
+      //     url: "https://github.com/Seeroy/kubek-minecraft-dashboard/releases/tag/" + upd,
+      //     downloaded: dwn
+      //   };
+      // } else {
+      //   console.log(additional.getTimeFormatted(), colors.green(translator.translateHTML("{{consolemsg-noupd}}", cfg['lang'])));
+      //   updatesByIntArray = {
+      //     found: false
+      //   };
+      // }
     });
   }, updatesInterval);
 }
