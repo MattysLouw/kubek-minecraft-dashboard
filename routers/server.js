@@ -3,19 +3,10 @@ var router = express.Router();
 var fs = require('fs');
 var additional = require('./../my_modules/additional');
 var config = require("./../my_modules/config");
-var iconvlite = require('iconv-lite');
 var serverController = require("./../my_modules/servers");
-var path = require('path');
-const {
-  spawn
-} = require('node:child_process');
 var treekill = require('tree-kill');
 const auth_manager = require("./../my_modules/auth_manager");
-const errors_parser = require("./../my_modules/errors.mc.parser");
-const translator = require('./../my_modules/translator');
-
-var servers_restart_count = {};
-var restart_after_stop = {};
+const tgbot_manager = require('./../my_modules/tgbot');
 
 const ACCESS_PERMISSION = "server_settings";
 const ACCESS_PERMISSION_2 = "console";
@@ -123,10 +114,14 @@ router.get('/completion', function (req, res) {
   sss = {
     status: "stopped",
     restartOnError: true,
-    stopCommand: "stop"
+    stopCommand: "stop",
+    scheludedRestart: {
+      enabled: false,
+      crontab: "* * * * * *"
+    }
   };
   cge[req.query.server] = sss;
-  configjson = cge;
+  serverjson_cfg = cge;
   config.writeServersJSON(cge);
   res.send("Success");
 });
@@ -137,16 +132,27 @@ router.get('/statuses', function (req, res) {
 });
 
 router.get('/saveStopCommand', function (req, res) {
-  rd = config.readServersJSON();
-  rd[req.query.server]['stopCommand'] = req.query.cmd;
-  config.writeServersJSON(rd);
+  serverjson_cfg[req.query.server]['stopCommand'] = req.query.cmd;
+  config.writeServersJSON(serverjson_cfg);
+  res.send("true");
+});
+
+router.get('/saveRestartScheduler', function (req, res) {
+  serverjson_cfg = config.readServersJSON();
+  rr = {
+    enabled: req.query.enabled,
+    crontab: req.query.crontab
+  }
+  serverjson_cfg[req.query.server]['restartScheduler'] = rr;
+  config.writeServersJSON(serverjson_cfg);
+  serverController.rescheduleAllServers();
   res.send("true");
 });
 
 router.get('/getStartScript', function (req, res) {
   perms = auth_manager.getUserPermissions(req);
   if (perms.includes(ACCESS_PERMISSION)) {
-    if (typeof (configjson[req.query.server]) !== 'undefined') {
+    if (typeof (serverjson_cfg[req.query.server]) !== 'undefined') {
       res.send(serverController.getStartScript(req.query.server));
     } else {
       res.send("false");
@@ -159,7 +165,7 @@ router.get('/getStartScript', function (req, res) {
 router.get('/saveStartScript', (req, res) => {
   perms = auth_manager.getUserPermissions(req);
   if (perms.includes(ACCESS_PERMISSION)) {
-    if (typeof (configjson[req.query.server]) !== 'undefined') {
+    if (typeof (serverjson_cfg[req.query.server]) !== 'undefined') {
       res.send(serverController.saveStartScript(req.query.server, req.query.script, req.query.resonerr));
     } else {
       res.send("false");
@@ -172,7 +178,7 @@ router.get('/saveStartScript', (req, res) => {
 router.get('/getServerPropertiesFile', function (req, res) {
   perms = auth_manager.getUserPermissions(req);
   if (perms.includes(ACCESS_PERMISSION)) {
-    if (typeof (configjson[req.query.server]) !== 'undefined') {
+    if (typeof (serverjson_cfg[req.query.server]) !== 'undefined') {
       res.set('Content-Type', 'application/json');
       res.send(serverController.getServerProperties(req.query.server));
     } else {
@@ -186,7 +192,7 @@ router.get('/getServerPropertiesFile', function (req, res) {
 router.get('/saveServerPropertiesFile', function (req, res) {
   perms = auth_manager.getUserPermissions(req);
   if (perms.includes(ACCESS_PERMISSION)) {
-    if (typeof (configjson[req.query.server]) !== 'undefined') {
+    if (typeof (serverjson_cfg[req.query.server]) !== 'undefined') {
       res.send(serverController.saveServerProperties(req.query.server, req.query.doc));
     } else {
       res.send("false");
@@ -199,7 +205,7 @@ router.get('/saveServerPropertiesFile', function (req, res) {
 router.get('/log', function (req, res) {
   perms = auth_manager.getUserPermissions(req);
   if (perms.includes(ACCESS_PERMISSION_2)) {
-    if (typeof (configjson[req.query.server]) !== 'undefined') {
+    if (typeof (serverjson_cfg[req.query.server]) !== 'undefined') {
       spl = servers_logs[req.query.server].split(/\r?\n/).slice(-100);
       res.send(spl.join("\r\n"));
     } else {
@@ -213,9 +219,9 @@ router.get('/log', function (req, res) {
 router.get('/delete', function (req, res) {
   perms = auth_manager.getUserPermissions(req);
   if (perms.includes(ACCESS_PERMISSION)) {
-    if (typeof (configjson[req.query.server]) !== 'undefined') {
-      delete configjson[req.query.server];
-      config.writeServersJSON(configjson);
+    if (typeof (serverjson_cfg[req.query.server]) !== 'undefined') {
+      delete serverjson_cfg[req.query.server];
+      config.writeServersJSON(serverjson_cfg);
       setTimeout(function () {
         fs.rm("./servers/" + req.query.server, {
           recursive: true,
@@ -233,8 +239,8 @@ router.get('/delete', function (req, res) {
 });
 
 router.get('/start', function (req, res) {
-  if (typeof (configjson[req.query.server]) !== 'undefined' && configjson[req.query.server].status == "stopped") {
-    startServer(req.query.server);
+  if (typeof (serverjson_cfg[req.query.server]) !== 'undefined' && serverjson_cfg[req.query.server].status == "stopped") {
+    serverController.startServer(req.query.server);
     res.send("true");
   } else {
     res.send("false");
@@ -251,7 +257,7 @@ router.get('/kill', function (req, res) {
 });
 
 router.get('/restart', function (req, res) {
-  if (typeof (configjson[req.query.server]) !== 'undefined' && configjson[req.query.server].status == "started" && typeof restart_after_stop[req.query.server] == "undefined") {
+  if (typeof (serverjson_cfg[req.query.server]) !== 'undefined' && serverjson_cfg[req.query.server].status == "started" && typeof restart_after_stop[req.query.server] == "undefined") {
     restart_after_stop[req.query.server] = true;
     command = "stop";
     command = Buffer.from(command, 'utf-8').toString();
@@ -264,7 +270,7 @@ router.get('/restart', function (req, res) {
 });
 
 router.get('/sendCommand', function (req, res) {
-  if (typeof (configjson[req.query.server]) !== 'undefined') {
+  if (typeof (serverjson_cfg[req.query.server]) !== 'undefined') {
     command = req.query.cmd;
     command = Buffer.from(command, 'utf-8').toString();
     servers_logs[req.query.server] = servers_logs[req.query.server] + command + "\n";
@@ -274,206 +280,5 @@ router.get('/sendCommand', function (req, res) {
     res.send("false");
   }
 });
-
-function startServer(server) {
-  servers_logs[server] = "";
-  if (process.platform == "win32") {
-    startFile = path.resolve("./servers/" + server + "/start.bat");
-    if (fs.existsSync(startFile)) {
-      try {
-        servers_instances[server] = spawn(startFile);
-      } catch (error) {
-        console.error(error);
-      }
-      start = true;
-    } else {
-      console.log(colors.red(additional.getTimeFormatted() + " " + '"servers/' + server + '/start.bat"' + translator.translateHTML(" {{consolemsg-notfound-tr}}", cfg['lang'])));
-      start = false;
-    }
-  } else if (process.platform == "linux") {
-    startFile = path.resolve("./servers/" + server + "/start.sh");
-    if (fs.existsSync(startFile)) {
-      try {
-        servers_instances[server] = spawn('sh', [startFile]);
-      } catch (error) {
-        console.error(error);
-      }
-      start = true;
-    } else {
-      console.log(colors.red(additional.getTimeFormatted() + " " + '"servers/' + server + '/start.sh"' + translator.translateHTML(" {{consolemsg-notfound-tr}}", cfg['lang'])));
-      start = false;
-    }
-  } else {
-    console.log(colors.red(additional.getTimeFormatted() + " " + process.platform + translator.translateHTML(" {{consolemsg-notsup}} ", cfg['lang'])));
-    start = false;
-  }
-
-  if (start == true) {
-    configjson = JSON.parse(fs.readFileSync("./servers/servers.json"));
-    console.log(additional.getTimeFormatted(), translator.translateHTML("{{consolemsg-starting}} ", cfg['lang']) + ":", server.green);
-    statuss = "starting";
-    servers_instances[server].on('close', (code) => {
-      statuss = "stopped";
-      configjson[server].status = statuss;
-      config.writeServersJSON(configjson);
-      fsock = io.sockets.sockets;
-      for (const socket of fsock) {
-        socket[1].emit("handleUpdate", {
-          type: "servers",
-          data: serverController.getStatuses()
-        });
-      }
-      if (code != 1) {
-        if (code != 0) {
-          servers_logs[server] = servers_logs[server] + "§4" + translator.translateHTML("{{consolemsg-stopwithcode}} ", cfg['lang']) + code;
-          console.log(additional.getTimeFormatted(), translator.translateHTML("{{consolemsg-stopwithcode}} ", cfg['lang']) + code + ":", server.red);
-          if (configjson[server]['restartOnError'] == true && errors_parser.checkStringForErrors(servers_logs[server]) == false) {
-            if (typeof servers_restart_count[server] == "undefined") {
-              servers_restart_count[server] = 1;
-              console.log(additional.getTimeFormatted(), translator.translateHTML("{{consolemsg-restartatt}} ", cfg['lang']) + "1 :", server.red);
-              servers_logs[server] = servers_logs[server] + "\n" + translator.translateHTML("{{consolemsg-restartatt}} ", cfg['lang']) + "1";
-              setTimeout(function () {
-                startServer(server);
-              }, 3000);
-            } else {
-              if (servers_restart_count[server] < 3) {
-                servers_restart_count[server]++;
-                console.log(additional.getTimeFormatted(), translator.translateHTML("{{consolemsg-restartatt}} ", cfg['lang']) + servers_restart_count[server] + " :", server.red);
-                servers_logs[server] = servers_logs[server] + "\n" + translator.translateHTML("{{consolemsg-restartatt}} ", cfg['lang']) + servers_restart_count[server];
-                setTimeout(function () {
-                  startServer(server);
-                }, 3000);
-              } else {
-                servers_logs[server] = servers_logs[server] + "\n§4" + translator.translateHTML("{{consolemsg-cantbestarted}}", cfg['lang']);
-              }
-            }
-          }
-        } else {
-          console.log(additional.getTimeFormatted(), translator.translateHTML("{{consolemsg-stop}} ", cfg['lang']) + ":", server.green);
-          if (restart_after_stop[server] == true) {
-            restart_after_stop[server] = null;
-            delete restart_after_stop[server];
-            setTimeout(function () {
-              startServer(server);
-            }, 500);
-          }
-        }
-      } else {
-        console.log(additional.getTimeFormatted(), translator.translateHTML("{{consolemsg-stopwithcode}} ", cfg['lang']) + code + ":", server.yellow);
-        servers_logs[server] = servers_logs[server] + "\n§bKilled";
-      }
-      fsock = io.sockets.sockets;
-      for (const socket of fsock) {
-        spl = servers_logs[server].split(/\r?\n/).slice(-100);
-        socket[1].emit("handleUpdate", {
-          type: "console",
-          data: {
-            server: server,
-            data: spl.join("\r\n")
-          }
-        });
-      }
-    });
-    servers_instances[server].stdout.on('data', (data) => {
-      data = iconvlite.decode(data, "utf-8");
-      err = errors_parser.checkStringForErrors(data.toString());
-      if (err != false) {
-        fsock = io.sockets.sockets;
-        for (const socket of fsock) {
-          socket[1].emit("handleServerError", {
-            type: "servers",
-            data: err
-          });
-        }
-      }
-      servers_logs[server] = servers_logs[server] + data.toString();
-      fsock = io.sockets.sockets;
-      for (const socket of fsock) {
-        spl = servers_logs[server].split(/\r?\n/).slice(-100);
-        socket[1].emit("handleUpdate", {
-          type: "console",
-          data: {
-            server: server,
-            data: spl.join("\r\n")
-          }
-        });
-      }
-      if (data.indexOf("Loading libraries, please wait...") >= 0) {
-        statuss = "starting";
-      }
-      if (data.indexOf("Done") >= 0) {
-        statuss = "started";
-        console.log(additional.getTimeFormatted(), translator.translateHTML("{{consolemsg-start}} ", cfg['lang']) + ":", server.green);
-      }
-      if (data.indexOf("Listening on /") >= 0) {
-        statuss = "started";
-        console.log(additional.getTimeFormatted(), translator.translateHTML("{{consolemsg-start}} ", cfg['lang']) + ":", server.green);
-      }
-      if (data.match(/\[INFO] Listening on/gm)) {
-        statuss = "started";
-        console.log(additional.getTimeFormatted(), translator.translateHTML("{{consolemsg-start}} ", cfg['lang']) + ":", server.green);
-      }
-      if (data.match(/\[INFO] Done/gm)) {
-        statuss = "started";
-        console.log(additional.getTimeFormatted(), translator.translateHTML("{{consolemsg-start}} ", cfg['lang']) + ":", server.green);
-      }
-      if (data.indexOf("Saving players") >= 0) {
-        console.log(additional.getTimeFormatted(), translator.translateHTML("{{consolemsg-stopping}} ", cfg['lang']) + ":", server.green);
-        statuss = "stopping";
-      }
-      configjson[server].status = statuss;
-      config.writeServersJSON(configjson);
-      fsock = io.sockets.sockets;
-      for (const socket of fsock) {
-        socket[1].emit("handleUpdate", {
-          type: "servers",
-          data: serverController.getStatuses()
-        });
-      }
-    });
-    servers_instances[server].stderr.on('data', (data) => {
-      data = iconvlite.decode(data, "utf-8");
-      err = errors_parser.checkStringForErrors(data.toString());
-      if (err != false) {
-        fsock = io.sockets.sockets;
-        for (const socket of fsock) {
-          socket[1].emit("handleServerError", {
-            type: "servers",
-            data: err
-          });
-        }
-      }
-      servers_logs[server] = servers_logs[server] + "ERROR: " + data.toString();
-      fsock = io.sockets.sockets;
-      for (const socket of fsock) {
-        spl = servers_logs[server].split(/\r?\n/).slice(-100);
-        socket[1].emit("handleUpdate", {
-          type: "console",
-          data: {
-            server: server,
-            data: spl.join("\r\n")
-          }
-        });
-      }
-      configjson[server].status = statuss;
-      config.writeServersJSON(configjson);
-      fsock = io.sockets.sockets;
-      for (const socket of fsock) {
-        socket[1].emit("handleUpdate", {
-          type: "servers",
-          data: serverController.getStatuses()
-        });
-      }
-    });
-    config.writeServersJSON(configjson);
-    fsock = io.sockets.sockets;
-    for (const socket of fsock) {
-      socket[1].emit("handleUpdate", {
-        type: "servers",
-        data: serverController.getStatuses()
-      });
-    }
-  }
-}
 
 module.exports = router;

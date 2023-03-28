@@ -8,6 +8,7 @@ const kubek = require("./my_modules/kubek");
 const additional = require("./my_modules/additional");
 const serverController = require("./my_modules/servers");
 const auth_manager = require("./my_modules/auth_manager");
+const tgbot_manager = require("./my_modules/tgbot");
 
 // Express initialization
 const express = require('express');
@@ -149,9 +150,11 @@ global.forgesIns = [];
 global.currentFileWritings = [];
 global.currentFileWritingsText = [];
 global.ftpserver;
+global.servers_restart_count = {};
+global.restart_after_stop = {};
 
 // Kubek version
-global.kubek_version = "v2.0.13-fix";
+global.kubek_version = "v2.0.15";
 
 app.use(fileUpload());
 app.use(cookieParser());
@@ -163,16 +166,16 @@ app.use('/downloader/download', authLimiter3);
 app.use('/plugins/delete', authLimiter3);
 app.use('/plugins/deleteMod', authLimiter3);
 
-global.configjson = config.readServersJSON();
-for (var i in configjson) {
-  configjson[i]['status'] = 'stopped';
+global.serverjson_cfg = config.readServersJSON();
+for (var i in serverjson_cfg) {
+  serverjson_cfg[i]['status'] = 'stopped';
 }
 if (fs.existsSync("./servers/servers.json")) {
-  fs.writeFileSync("./servers/servers.json", JSON.stringify(configjson));
+  fs.writeFileSync("./servers/servers.json", JSON.stringify(serverjson_cfg));
 }
 
-if (typeof (configjson) !== "undefined") {
-  for (t in configjson) {
+if (typeof (serverjson_cfg) !== "undefined") {
+  for (t in serverjson_cfg) {
     servers_logs[t] = "";
     servers_instances[t] = "";
   }
@@ -268,6 +271,10 @@ updater.checkForUpdates(function (upd, body) {
     }
     ftpserver = ftpd.startFTPD(options, cfg['ftpd-user'], cfg['ftpd-password']);
   }
+  if (cfg['tgbot-enabled'] == true) {
+    tgbot_manager.startBot(cfg['tgbot-token']);
+  }
+  serverController.rescheduleAllServers();
   console.log(additional.getTimeFormatted(), translator.translateHTML("{{consolemsg-viewurl-start}}", cfg['lang']), 'http://localhost:' + port);
 });
 
