@@ -98,6 +98,7 @@ io.on("connection", (socket) => {
         break;
       case "query":
         serverController.queryServer(arg.server, function (data) {
+          last_servers_query[arg.server] = data;
           socket.emit("handleUpdate", {
             type: "query",
             data: data
@@ -105,14 +106,12 @@ io.on("connection", (socket) => {
         });
         break;
       case "console":
-        serverController.queryServer(arg.server, function (data) {
-          socket.emit("handleUpdate", {
-            type: "console",
-            data: {
-              server: arg.server,
-              data: servers_logs[arg.server]
-            }
-          });
+        socket.emit("handleUpdate", {
+          type: "console",
+          data: {
+            server: arg.server,
+            data: servers_logs[arg.server]
+          }
         });
         break;
     }
@@ -152,6 +151,8 @@ global.currentFileWritingsText = [];
 global.ftpserver;
 global.servers_restart_count = {};
 global.restart_after_stop = {};
+global.last_servers_query = {};
+global.otp_tg = null;
 
 // Kubek version
 global.kubek_version = "v2.0.15";
@@ -198,6 +199,11 @@ for (i = 0; i < textpad; i++) {
 console.log(colors.inverse('https://github.com/Seeroy/kubek-minecraft-dashboard'));
 console.log(kv);
 console.log(" ");
+
+setInterval(function () {
+  tgbot_manager.regenerateOTP();
+}, 15000);
+tgbot_manager.regenerateOTP();
 
 updater.checkForUpdates(function (upd, body) {
   if (upd != 0 && kubek_version != upd && typeof body !== 'undefined') {
