@@ -9,6 +9,24 @@ function hideLoading() {
   });
 }
 
+/* Modal functions */
+function showModal(id, anim, cb) {
+  $("#" + id).show();
+  animateCSS("#" + id + " .modal-layout", anim);
+  $("#" + id + " .modal-layout .clsbtn").unbind("click");
+  $("#" + id + " .modal-layout .clsbtn").click(function(e){
+    hideModal(id);
+    cb(e);
+  });
+}
+
+function hideModal(id) {
+  $("#" + id + " .modal-layout .clsbtn").unbind("click");
+  $("#" + id).fadeOut(100, function () {
+    $("#" + id).hide();
+  });
+}
+
 function openSocket() {
   return io("https://" + window.location.hostname);
 }
@@ -144,16 +162,22 @@ function restartServer() {
   $.get("/server/restart?server=" + window.localStorage.selectedServer);
 }
 
+function killServer() {
+  showModal("kill-server-modal", "zoomIn", function(){
+    $.get("/server/kill?server=" + window.localStorage.selectedServer);
+  });
+}
+
 const animateCSS = (element, animation, prefix = 'animate__') =>
   new Promise((resolve, reject) => {
     const animationName = `${prefix}${animation}`;
     const node = document.querySelector(element);
 
-    node.classList.add(`${prefix}animated`, animationName);
+    node.classList.add(`${prefix}animated`, animationName, `${prefix}faster`);
 
     function handleAnimationEnd(event) {
       event.stopPropagation();
-      node.classList.remove(`${prefix}animated`, animationName);
+      node.classList.remove(`${prefix}animated`, animationName, `${prefix}faster`);
       resolve('Animation ended');
     }
 
