@@ -72,7 +72,8 @@ exports.setCheckingForUpdatesByInterval = (updatesInterval) => {
       //   updatesByIntArray = {
       //     found: false
       //   };
-      // }
+      
+      }
     });
   }, updatesInterval);
 }
